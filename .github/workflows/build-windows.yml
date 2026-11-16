@@ -1,0 +1,37 @@
+name: Build Windows installer
+on: { workflow_dispatch: {}, push: { tags: ["v*"] } }
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Testes do motor
+        run: |
+          choco install ffmpeg -y --no-progress
+          cd engine && python -m unittest discover -s tests -t . -v
+      - name: Empacotar motor (PyInstaller)
+        shell: bash
+        run: |
+          pip install pyinstaller
+          mkdir -p app/src-tauri/binaries
+          cd engine && pyinstaller --onefile --name ptk-engine -p . ptk_engine/server.py
+          triple=$(rustc -vV | sed -n 's/host: //p')
+          cp dist/ptk-engine.exe ../app/src-tauri/binaries/ptk-engine-$triple.exe
+      - name: Copiar FFmpeg
+        shell: bash
+        run: |
+          mkdir -p app/src-tauri/resources/ffmpeg
+          B="/c/ProgramData/chocolatey/lib/ffmpeg/tools/ffmpeg/bin"
+          cp "$B/ffmpeg.exe" "$B/ffprobe.exe" app/src-tauri/resources/ffmpeg/
+      - name: Build Tauri
+        working-directory: app
+        run: |
+          npm install
+          npx tauri build
+      - uses: actions/upload-artifact@v4
+        with: { name: PTK-AI-STUDIO-installer, path: app/src-tauri/target/release/bundle/nsis/*.exe }
